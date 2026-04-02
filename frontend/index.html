@@ -253,11 +253,13 @@
     <!-- Voting Screen -->
     <div id="vote-screen" class="hidden">
       <h1>Cast Your Vote</h1>
-      <p class="subtitle">Choose your candidate below</p>
+      <p class="subtitle" id="welcome-msg">Choose your candidate below</p>
       <div id="vote-msg" class="success-msg hidden"></div>
       <button class="candidate-btn" data-candidate="Alice">Alice</button>
       <button class="candidate-btn" data-candidate="Bob">Bob</button>
       <button class="candidate-btn" data-candidate="Charlie">Charlie</button>
+      <button class="candidate-btn" data-candidate="Diana">Diana</button>
+      <button class="candidate-btn" data-candidate="Eve">Eve</button>
 
       <div class="divider"></div>
 
@@ -301,6 +303,7 @@
         loginScreen.classList.add("hidden");
         voteScreen.classList.remove("hidden");
         voteScreen.classList.add("fade-in");
+        document.getElementById("welcome-msg").textContent = `Welcome, ${username}! Choose your candidate`;
         loadResults();
       } catch (err) {
         loginError.textContent = err.message;
