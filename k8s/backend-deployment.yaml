@@ -18,6 +18,7 @@ spec:
       labels:
         app: backend-api
     spec:
+      serviceAccountName: backend-api-sa
       containers:
         - name: backend
           # CI pipeline replaces this tag with the commit SHA
