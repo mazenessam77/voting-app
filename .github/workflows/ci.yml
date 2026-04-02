@@ -8,6 +8,7 @@
 name: CI — Build & Push to ECR
 
 on:
+  workflow_dispatch: # Manual trigger — builds all services
   push:
     branches: [main]
     paths:
@@ -28,7 +29,7 @@ env:
 # Allow GitHub OIDC token for AWS authentication
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   build-auth:
     needs: changes
-    if: needs.changes.outputs.auth == 'true'
+    if: needs.changes.outputs.auth == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +90,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   build-backend:
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -120,7 +121,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   build-frontend:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
