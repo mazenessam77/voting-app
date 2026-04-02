@@ -18,7 +18,7 @@ set -euo pipefail
 # ── Configuration ────────────────────────────────────────────────────────────
 AWS_REGION="eu-west-2"
 CLUSTER_NAME="voting-app-eks"
-GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/<YOUR_USERNAME>/voting-app.git}"
+GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/mazenessam77/voting-app.git}"
 INGRESS_NGINX_VERSION="controller-v1.10.0"
 ARGOCD_VERSION="stable"
 

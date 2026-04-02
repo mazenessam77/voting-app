@@ -16,7 +16,7 @@
 #   3. Get the initial admin password:
 #      kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 #
-# IMPORTANT: Replace <YOUR_GITHUB_REPO_URL> below with your actual repo URL.
+# IMPORTANT: Replace https://github.com/mazenessam77/voting-app.git below with your actual repo URL.
 ##############################################################################
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -28,7 +28,7 @@ spec:
 
   source:
     # Point to your GitHub repository containing the k8s/ manifests
-    repoURL: <YOUR_GITHUB_REPO_URL>
+    repoURL: https://github.com/mazenessam77/voting-app.git
     targetRevision: main
     path: k8s
 

@@ -21,7 +21,7 @@ spec:
       containers:
         - name: auth
           # CI pipeline replaces this tag with the commit SHA
-          image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/voting-app-auth:latest
+          image: 541405370428.dkr.ecr.eu-west-2.amazonaws.com/voting-app-auth:latest
           ports:
             - containerPort: 3000
           env:
