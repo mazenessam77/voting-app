@@ -21,7 +21,7 @@ spec:
       containers:
         - name: frontend
           # CI pipeline replaces this tag with the commit SHA
-          image: 541405370428.dkr.ecr.eu-west-2.amazonaws.com/voting-app-frontend:d8cef57530e24ad4975b7b53c833566a8f6d73b1
+          image: 541405370428.dkr.ecr.eu-west-2.amazonaws.com/voting-app-frontend:cceefe35a335cda82537dcb5fd72403c5f43b177
           ports:
             - containerPort: 80
           # Mount env.js from ConfigMap so the browser gets runtime URLs
