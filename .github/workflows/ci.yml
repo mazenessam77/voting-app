@@ -1,11 +1,18 @@
 ##############################################################################
-# CI Pipeline — Build, Scan, Push to ECR for all 3 microservices
+# CI/CD Pipeline — Fully Automated
 #
-# Triggers on push to main or PRs touching service code.
-# Uses GitHub OIDC to assume an AWS IAM role (no long-lived secrets).
+# Flow:
+#   1. Developer pushes code to auth-service/, backend-api/, or frontend/
+#   2. CI detects which services changed, builds Docker images in parallel
+#   3. Images are pushed to ECR (tagged with commit SHA + latest)
+#   4. K8s manifests are updated with new image tags and committed
+#   5. ArgoCD detects the manifest change and auto-deploys to EKS
+#
+# Prevents infinite loops: commits by github-actions[bot] are ignored,
+# and the update-manifests commit uses [skip ci] in the message.
 ##############################################################################
 
-name: CI — Build & Push to ECR
+name: CI/CD Pipeline
 
 on:
   workflow_dispatch: # Manual trigger — builds all services
@@ -15,18 +22,11 @@ on:
       - "auth-service/**"
       - "backend-api/**"
       - "frontend/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "auth-service/**"
-      - "backend-api/**"
-      - "frontend/**"
 
 env:
   AWS_REGION: eu-west-2
-  EKS_CLUSTER_NAME: voting-app-eks
+  ECR_REGISTRY: 541405370428.dkr.ecr.eu-west-2.amazonaws.com
 
-# Allow GitHub OIDC token for AWS authentication
 permissions:
   id-token: write
   contents: write
@@ -36,6 +36,8 @@ jobs:
   # Detect which services changed so we only build what's needed
   # ────────────────────────────────────────────────────────────────────────────
   changes:
+    # Skip if the commit was made by the CI bot (prevents infinite loops)
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     outputs:
       auth: ${{ steps.filter.outputs.auth }}
@@ -55,12 +57,14 @@ jobs:
               - 'frontend/**'
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Auth Service
+  # Auth Service — Build & Push to ECR
   # ────────────────────────────────────────────────────────────────────────────
   build-auth:
     needs: changes
     if: needs.changes.outputs.auth == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,27 +75,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push auth-service image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build, tag, and push
         run: |
-          docker build -t $ECR_REGISTRY/voting-app-auth:$IMAGE_TAG \
+          docker build -t $ECR_REGISTRY/voting-app-auth:${{ github.sha }} \
                         -t $ECR_REGISTRY/voting-app-auth:latest \
                         ./auth-service
-          docker push $ECR_REGISTRY/voting-app-auth:$IMAGE_TAG
+          docker push $ECR_REGISTRY/voting-app-auth:${{ github.sha }}
           docker push $ECR_REGISTRY/voting-app-auth:latest
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Backend API Service
+  # Backend API — Build & Push to ECR
   # ────────────────────────────────────────────────────────────────────────────
   build-backend:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -102,27 +104,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push backend-api image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build, tag, and push
         run: |
-          docker build -t $ECR_REGISTRY/voting-app-backend:$IMAGE_TAG \
+          docker build -t $ECR_REGISTRY/voting-app-backend:${{ github.sha }} \
                         -t $ECR_REGISTRY/voting-app-backend:latest \
                         ./backend-api
-          docker push $ECR_REGISTRY/voting-app-backend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/voting-app-backend:${{ github.sha }}
           docker push $ECR_REGISTRY/voting-app-backend:latest
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Frontend Service
+  # Frontend — Build & Push to ECR
   # ────────────────────────────────────────────────────────────────────────────
   build-frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -133,61 +133,64 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push frontend image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build, tag, and push
         run: |
-          docker build -t $ECR_REGISTRY/voting-app-frontend:$IMAGE_TAG \
+          docker build -t $ECR_REGISTRY/voting-app-frontend:${{ github.sha }} \
                         -t $ECR_REGISTRY/voting-app-frontend:latest \
                         ./frontend
-          docker push $ECR_REGISTRY/voting-app-frontend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/voting-app-frontend:${{ github.sha }}
           docker push $ECR_REGISTRY/voting-app-frontend:latest
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Update Kubernetes manifests for ArgoCD (GitOps)
-  # ArgoCD watches the k8s/ directory and auto-syncs on changes.
+  # Update K8s manifests → ArgoCD auto-syncs to EKS
+  #
+  # This job does NOT need AWS credentials. It simply updates the image tags
+  # in the YAML files and pushes to git. ArgoCD handles the rest.
   # ────────────────────────────────────────────────────────────────────────────
   update-manifests:
     needs: [build-auth, build-backend, build-frontend]
-    if: github.ref == 'refs/heads/main' && always() && (needs.build-auth.result == 'success' || needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.build-auth.result == 'skipped' || needs.build-backend.result == 'skipped' || needs.build-frontend.result == 'skipped')
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (needs.build-auth.result == 'success' || needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Update image tags in K8s manifests
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Update image tags in K8s deployment manifests
         run: |
-          # Update image tags in deployment manifests so ArgoCD picks up changes
-          if [ -d "k8s" ]; then
-            sed -i "s|image: .*/voting-app-auth:.*|image: $ECR_REGISTRY/voting-app-auth:$IMAGE_TAG|g" k8s/*.yaml 2>/dev/null || true
-            sed -i "s|image: .*/voting-app-backend:.*|image: $ECR_REGISTRY/voting-app-backend:$IMAGE_TAG|g" k8s/*.yaml 2>/dev/null || true
-            sed -i "s|image: .*/voting-app-frontend:.*|image: $ECR_REGISTRY/voting-app-frontend:$IMAGE_TAG|g" k8s/*.yaml 2>/dev/null || true
+          TAG="${{ github.sha }}"
+          REG="${{ env.ECR_REGISTRY }}"
+
+          # Only update tags for services that were actually built
+          if [ "${{ needs.build-auth.result }}" = "success" ]; then
+            sed -i "s|image: .*/voting-app-auth:.*|image: ${REG}/voting-app-auth:${TAG}|g" k8s/auth-deployment.yaml
+            echo "Updated auth-service image to ${TAG}"
+          fi
+
+          if [ "${{ needs.build-backend.result }}" = "success" ]; then
+            sed -i "s|image: .*/voting-app-backend:.*|image: ${REG}/voting-app-backend:${TAG}|g" k8s/backend-deployment.yaml
+            echo "Updated backend-api image to ${TAG}"
+          fi
+
+          if [ "${{ needs.build-frontend.result }}" = "success" ]; then
+            sed -i "s|image: .*/voting-app-frontend:.*|image: ${REG}/voting-app-frontend:${TAG}|g" k8s/frontend-deployment.yaml
+            echo "Updated frontend image to ${TAG}"
           fi
 
       - name: Commit and push updated manifests
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add k8s/ 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "ci: update image tags to ${{ github.sha }}"
-          git push || true
+          git add k8s/
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit"
+          else
+            git commit -m "cd: update image tags to ${{ github.sha }} [skip ci]"
+            git push
+            echo "Manifests pushed — ArgoCD will auto-sync to EKS"
+          fi
