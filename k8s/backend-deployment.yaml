@@ -21,7 +21,7 @@ spec:
       containers:
         - name: backend
           # CI pipeline replaces this tag with the commit SHA
-          image: 541405370428.dkr.ecr.eu-west-2.amazonaws.com/voting-app-backend:latest
+          image: 541405370428.dkr.ecr.eu-west-2.amazonaws.com/voting-app-backend:668cb27faab4e9eaf41b6b3a7b6c119f5f2e5a76
           ports:
             - containerPort: 4000
           env:
