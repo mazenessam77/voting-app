@@ -1,0 +1,16 @@
+##############################################################################
+# configmap.yaml — Non-sensitive configuration shared across services
+##############################################################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voting-app-config
+  namespace: voting-app
+data:
+  # AWS region for DynamoDB SDK calls
+  AWS_REGION: "eu-west-2"
+  # DynamoDB table name (must match Terraform output)
+  DYNAMODB_TABLE: "Votes"
+  # Internal service ports
+  AUTH_PORT: "3000"
+  BACKEND_PORT: "4000"

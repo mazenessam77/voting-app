@@ -1,0 +1,51 @@
+##############################################################################
+# ingress.yaml — Nginx Ingress: routes external traffic to services
+#
+# Path routing:
+#   /           → frontend      (serves the UI)
+#   /auth/(.*)  → auth-service  (rewrites to /$1, e.g. /auth/login → /login)
+#   /api/(.*)   → backend-api   (rewrites to /$1, e.g. /api/votes  → /votes)
+#
+# Prerequisites:
+#   Install the NGINX Ingress Controller on the cluster:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/aws/deploy.yaml
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voting-app-ingress
+  namespace: voting-app
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # AWS NLB created by the NGINX ingress controller for external access
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # Auth service — /auth/login → auth-service:3000/login
+          - path: /auth/(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 3000
+          # Backend API — /api/votes → backend-api:4000/votes
+          - path: /api/(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-api
+                port:
+                  number: 4000
+          # Frontend — catch-all serves the UI
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

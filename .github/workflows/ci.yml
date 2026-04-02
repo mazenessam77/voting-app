@@ -1,0 +1,192 @@
+##############################################################################
+# CI Pipeline — Build, Scan, Push to ECR for all 3 microservices
+#
+# Triggers on push to main or PRs touching service code.
+# Uses GitHub OIDC to assume an AWS IAM role (no long-lived secrets).
+##############################################################################
+
+name: CI — Build & Push to ECR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "auth-service/**"
+      - "backend-api/**"
+      - "frontend/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "auth-service/**"
+      - "backend-api/**"
+      - "frontend/**"
+
+env:
+  AWS_REGION: eu-west-2
+  EKS_CLUSTER_NAME: voting-app-eks
+
+# Allow GitHub OIDC token for AWS authentication
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Detect which services changed so we only build what's needed
+  # ────────────────────────────────────────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      auth: ${{ steps.filter.outputs.auth }}
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth:
+              - 'auth-service/**'
+            backend:
+              - 'backend-api/**'
+            frontend:
+              - 'frontend/**'
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Auth Service
+  # ────────────────────────────────────────────────────────────────────────────
+  build-auth:
+    needs: changes
+    if: needs.changes.outputs.auth == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push auth-service image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/voting-app-auth:$IMAGE_TAG \
+                        -t $ECR_REGISTRY/voting-app-auth:latest \
+                        ./auth-service
+          docker push $ECR_REGISTRY/voting-app-auth:$IMAGE_TAG
+          docker push $ECR_REGISTRY/voting-app-auth:latest
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Backend API Service
+  # ────────────────────────────────────────────────────────────────────────────
+  build-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push backend-api image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/voting-app-backend:$IMAGE_TAG \
+                        -t $ECR_REGISTRY/voting-app-backend:latest \
+                        ./backend-api
+          docker push $ECR_REGISTRY/voting-app-backend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/voting-app-backend:latest
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Frontend Service
+  # ────────────────────────────────────────────────────────────────────────────
+  build-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/voting-app-frontend:$IMAGE_TAG \
+                        -t $ECR_REGISTRY/voting-app-frontend:latest \
+                        ./frontend
+          docker push $ECR_REGISTRY/voting-app-frontend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/voting-app-frontend:latest
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Update Kubernetes manifests for ArgoCD (GitOps)
+  # ArgoCD watches the k8s/ directory and auto-syncs on changes.
+  # ────────────────────────────────────────────────────────────────────────────
+  update-manifests:
+    needs: [build-auth, build-backend, build-frontend]
+    if: github.ref == 'refs/heads/main' && always() && (needs.build-auth.result == 'success' || needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.build-auth.result == 'skipped' || needs.build-backend.result == 'skipped' || needs.build-frontend.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update image tags in K8s manifests
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Update image tags in deployment manifests so ArgoCD picks up changes
+          if [ -d "k8s" ]; then
+            sed -i "s|image: .*/voting-app-auth:.*|image: $ECR_REGISTRY/voting-app-auth:$IMAGE_TAG|g" k8s/*.yaml 2>/dev/null || true
+            sed -i "s|image: .*/voting-app-backend:.*|image: $ECR_REGISTRY/voting-app-backend:$IMAGE_TAG|g" k8s/*.yaml 2>/dev/null || true
+            sed -i "s|image: .*/voting-app-frontend:.*|image: $ECR_REGISTRY/voting-app-frontend:$IMAGE_TAG|g" k8s/*.yaml 2>/dev/null || true
+          fi
+
+      - name: Commit and push updated manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "ci: update image tags to ${{ github.sha }}"
+          git push || true

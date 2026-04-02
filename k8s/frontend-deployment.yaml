@@ -1,0 +1,55 @@
+##############################################################################
+# frontend-deployment.yaml — Frontend (Nginx serving static HTML/JS)
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: voting-app
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          # CI pipeline replaces this tag with the commit SHA
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/voting-app-frontend:latest
+          ports:
+            - containerPort: 80
+          # Mount env.js from ConfigMap so the browser gets runtime URLs
+          volumeMounts:
+            - name: env-config
+              mountPath: /usr/share/nginx/html/env.js
+              subPath: env.js
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 150m
+              memory: 128Mi
+      volumes:
+        - name: env-config
+          configMap:
+            name: frontend-env

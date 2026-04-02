@@ -1,0 +1,15 @@
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.lock.hcl
+
+# Node
+node_modules/
+*.log
+
+# OS
+.DS_Store
+
+# Docker
+*.bak

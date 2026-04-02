@@ -1,0 +1,18 @@
+##############################################################################
+# backend-service.yaml — ClusterIP service for internal access
+##############################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-api
+  namespace: voting-app
+  labels:
+    app: backend-api
+spec:
+  type: ClusterIP
+  selector:
+    app: backend-api
+  ports:
+    - port: 4000
+      targetPort: 4000
+      protocol: TCP

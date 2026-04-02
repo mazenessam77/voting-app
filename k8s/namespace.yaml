@@ -1,0 +1,9 @@
+##############################################################################
+# namespace.yaml — Isolated namespace for all voting-app resources
+##############################################################################
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voting-app
+  labels:
+    app.kubernetes.io/part-of: voting-app

@@ -1,0 +1,57 @@
+##############################################################################
+# auth-deployment.yaml — Auth Service (JWT login endpoint)
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: voting-app
+  labels:
+    app: auth-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth
+          # CI pipeline replaces this tag with the commit SHA
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/voting-app-auth:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: voting-app-config
+                  key: AUTH_PORT
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: voting-app-secret
+                  key: JWT_SECRET
+          # Liveness and readiness probes hit the /health endpoint
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

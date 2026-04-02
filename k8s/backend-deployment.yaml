@@ -1,0 +1,66 @@
+##############################################################################
+# backend-deployment.yaml — Backend API (DynamoDB voting endpoints)
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: voting-app
+  labels:
+    app: backend-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+    spec:
+      containers:
+        - name: backend
+          # CI pipeline replaces this tag with the commit SHA
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/voting-app-backend:latest
+          ports:
+            - containerPort: 4000
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: voting-app-config
+                  key: BACKEND_PORT
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: voting-app-secret
+                  key: JWT_SECRET
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: voting-app-config
+                  key: AWS_REGION
+            - name: DYNAMODB_TABLE
+              valueFrom:
+                configMapKeyRef:
+                  name: voting-app-config
+                  key: DYNAMODB_TABLE
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 150m
+              memory: 192Mi
+            limits:
+              cpu: 300m
+              memory: 384Mi

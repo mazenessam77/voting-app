@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voting App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .card { background: #fff; border-radius: 12px; padding: 2rem; width: 400px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    h1 { text-align: center; margin-bottom: 1.5rem; color: #333; }
+    input, button { width: 100%; padding: 0.75rem; margin-bottom: 0.75rem; border-radius: 8px; border: 1px solid #ddd; font-size: 1rem; }
+    button { background: #4f46e5; color: #fff; border: none; cursor: pointer; font-weight: 600; }
+    button:hover { background: #4338ca; }
+    .candidate-btn { background: #10b981; margin-bottom: 0.5rem; }
+    .candidate-btn:hover { background: #059669; }
+    .results { margin-top: 1rem; }
+    .result-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+    .error { color: #ef4444; text-align: center; margin-bottom: 0.75rem; font-size: 0.9rem; }
+    .info { color: #6b7280; text-align: center; margin-bottom: 0.75rem; font-size: 0.9rem; }
+    #logout-btn { background: #ef4444; margin-top: 1rem; }
+    #logout-btn:hover { background: #dc2626; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- Login Screen -->
+    <div id="login-screen">
+      <h1>Login</h1>
+      <div id="login-error" class="error hidden"></div>
+      <input id="username" type="text" placeholder="Username" />
+      <input id="password" type="password" placeholder="Password" />
+      <button id="login-btn">Login</button>
+    </div>
+
+    <!-- Voting Screen -->
+    <div id="vote-screen" class="hidden">
+      <h1>Vote for a Candidate</h1>
+      <div id="vote-msg" class="info hidden"></div>
+      <button class="candidate-btn" data-candidate="Alice">Alice</button>
+      <button class="candidate-btn" data-candidate="Bob">Bob</button>
+      <button class="candidate-btn" data-candidate="Charlie">Charlie</button>
+
+      <h2 style="margin-top:1.5rem;">Results</h2>
+      <div id="results" class="results"><p class="info">Loading...</p></div>
+      <button id="refresh-btn" style="background:#6366f1;">Refresh Results</button>
+      <button id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <!-- env.js is mounted via K8s ConfigMap to inject runtime service URLs -->
+  <script src="/env.js"></script>
+  <script>
+    // Service URLs — injected via env.js in K8s, fallback for local dev
+    const AUTH_URL  = window.__ENV__?.AUTH_URL  || "http://localhost:3000";
+    const API_URL   = window.__ENV__?.API_URL   || "http://localhost:4000";
+
+    let token = null;
+
+    // --- DOM refs ---
+    const loginScreen  = document.getElementById("login-screen");
+    const voteScreen   = document.getElementById("vote-screen");
+    const loginError   = document.getElementById("login-error");
+    const voteMsg      = document.getElementById("vote-msg");
+    const resultsDiv   = document.getElementById("results");
+
+    // --- Login ---
+    document.getElementById("login-btn").addEventListener("click", async () => {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      loginError.classList.add("hidden");
+
+      try {
+        const res = await fetch(`${AUTH_URL}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Login failed");
+
+        token = data.token;
+        loginScreen.classList.add("hidden");
+        voteScreen.classList.remove("hidden");
+        loadResults();
+      } catch (err) {
+        loginError.textContent = err.message;
+        loginError.classList.remove("hidden");
+      }
+    });
+
+    // --- Vote ---
+    document.querySelectorAll(".candidate-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        voteMsg.classList.add("hidden");
+        try {
+          const res = await fetch(`${API_URL}/vote`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ candidate: btn.dataset.candidate }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Vote failed");
+
+          voteMsg.textContent = `Voted for ${data.candidate}!`;
+          voteMsg.classList.remove("hidden");
+          loadResults();
+        } catch (err) {
+          voteMsg.textContent = err.message;
+          voteMsg.classList.remove("hidden");
+        }
+      });
+    });
+
+    // --- Results ---
+    async function loadResults() {
+      try {
+        const res = await fetch(`${API_URL}/votes`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load results");
+
+        if (data.length === 0) {
+          resultsDiv.innerHTML = '<p class="info">No votes yet.</p>';
+          return;
+        }
+        resultsDiv.innerHTML = data
+          .map((r) => `<div class="result-row"><span>${r.candidate}</span><span>${r.count} votes</span></div>`)
+          .join("");
+      } catch (err) {
+        resultsDiv.innerHTML = `<p class="error">${err.message}</p>`;
+      }
+    }
+
+    document.getElementById("refresh-btn").addEventListener("click", loadResults);
+
+    // --- Logout ---
+    document.getElementById("logout-btn").addEventListener("click", () => {
+      token = null;
+      voteScreen.classList.add("hidden");
+      loginScreen.classList.remove("hidden");
+      document.getElementById("username").value = "";
+      document.getElementById("password").value = "";
+    });
+  </script>
+</body>
+</html>

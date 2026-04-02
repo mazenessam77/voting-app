@@ -1,0 +1,18 @@
+##############################################################################
+# frontend-service.yaml — ClusterIP service for internal access
+##############################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: voting-app
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP

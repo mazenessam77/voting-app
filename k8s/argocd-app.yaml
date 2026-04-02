@@ -1,0 +1,53 @@
+##############################################################################
+# argocd-app.yaml — ArgoCD Application that watches the k8s/ directory
+#
+# ArgoCD monitors this Git repo. When CI pushes updated image tags to the
+# k8s/*.yaml manifests, ArgoCD detects the diff and syncs the changes
+# to the EKS cluster automatically.
+#
+# Prerequisites:
+#   1. Install ArgoCD on the cluster:
+#      kubectl create namespace argocd
+#      kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+#
+#   2. Expose the ArgoCD UI:
+#      kubectl port-forward svc/argocd-server -n argocd 8080:443
+#
+#   3. Get the initial admin password:
+#      kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+#
+# IMPORTANT: Replace <YOUR_GITHUB_REPO_URL> below with your actual repo URL.
+##############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: voting-app
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    # Point to your GitHub repository containing the k8s/ manifests
+    repoURL: <YOUR_GITHUB_REPO_URL>
+    targetRevision: main
+    path: k8s
+
+  destination:
+    # Deploy to the local EKS cluster, into the voting-app namespace
+    server: https://kubernetes.default.svc
+    namespace: voting-app
+
+  syncPolicy:
+    # Automated sync: ArgoCD applies changes as soon as it detects a Git diff
+    automated:
+      prune: true       # Delete K8s resources removed from Git
+      selfHeal: true    # Revert manual changes made directly on the cluster
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,17 @@
+##############################################################################
+# frontend-env-configmap.yaml — Injects env.js into the Nginx container
+#
+# This file is mounted at /usr/share/nginx/html/env.js so the browser
+# picks up the correct backend URLs at runtime (no rebuild needed).
+##############################################################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-env
+  namespace: voting-app
+data:
+  env.js: |
+    window.__ENV__ = {
+      AUTH_URL: "/auth",
+      API_URL: "/api"
+    };

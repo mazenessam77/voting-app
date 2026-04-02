@@ -1,0 +1,18 @@
+##############################################################################
+# auth-service.yaml — ClusterIP service for internal access
+##############################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: voting-app
+  labels:
+    app: auth-service
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
